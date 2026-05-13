@@ -1,0 +1,36 @@
+name: Build and Deploy WalletAnalyser AI to Azure
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Build and push Docker image to ACR
+        run: |
+          az acr build \
+            --registry walletanalyseracr \
+            --image walletanalyser-ai:latest \
+            --image walletanalyser-ai:${{ github.sha }} \
+            .
+
+      - name: Restart App Service
+        run: |
+          az webapp restart \
+            --name app-walletanalyser-ai \
+            --resource-group walletanalyser-rg
