@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -6,8 +7,36 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
+@dataclass(frozen=True)
+class ExcelColAttributes:
+    uuid: str = "uuid"
+    price_to_book: str = "price_to_book"
+    peg: str = "peg"
+    forward_pe: str = "forward_pe"
+    country: str = "country"
+    sector: str = "sector"
+    ebitda_margin: str = "ebitda_margin"
+    gross_margin: str = "gross_margin"
+    year_pct_change: str = "year_pct_change"
+    growth_level: str = "growth_level"
+    growth_trend: str = "growth_trend"
+    ebitda_level: str = "ebitda_level"
+    ebitda_trend: str = "ebitda_trend"
+    net_debt_ebitda: str = "net_debt_ebitda"
+    capex_to_revenue: str = "capex_to_revenue"
+    total_asset_to_revenue: str = "total_asset_to_revenue"
+    name: str = "name"
 
 BASE_DIR = Path(__file__).resolve().parent
+    
+
+def winsorize(df, cols, p=0.01):
+    df = df.copy()
+    for col in cols:
+        lower = df[col].quantile(p)
+        upper = df[col].quantile(1 - p)
+        df[col] = np.clip(df[col], lower, upper)
+    return df
 
 def clean_data(file=BASE_DIR / "../data/metrics.csv") -> pd.DataFrame:
     df = pd.read_csv(file)
@@ -19,32 +48,44 @@ def clean_data(file=BASE_DIR / "../data/metrics.csv") -> pd.DataFrame:
     data_cols = [c for c in df.columns if c != "uuid"]
 
     # 1. drop rows where ALL non-uuid columns are NaN
-    empty_mask = df[data_cols].isna().all(axis=1)
-    empty_mask = df['year_pct_change'].isna()
-    removed_count = empty_mask.sum()
+    data_cols = [c for c in df.columns if c != ExcelColAttributes.uuid]
 
-    df_clean = df.loc[~empty_mask].copy()
+    mask = (
+        df[data_cols].isna().all(axis=1)
+        | df[ExcelColAttributes.year_pct_change].isna()
+        | (df[ExcelColAttributes.gross_margin] == 0.0) & (df[ExcelColAttributes.ebitda_margin] == 0.0)
+    )
+
+    removed_count = mask.sum()
+
+    df_clean = df.loc[~mask].copy()
 
     # 2. count rows that still have at least one NaN in non-uuid columns
     nan_rows_mask = df_clean.isna().any(axis=1)
     nan_rows_count = nan_rows_mask.sum()
     nan_per_column = df_clean[data_cols].isna().sum()
+    df_clean = df_clean.replace([np.inf, -np.inf], np.nan)
 
     # print(f"Rows removed (all non-uuid values NaN; or 52w dont exist;  ): {removed_count}")
     # print(f"Rows remaining: {len(df_clean)}")
     # print(f"Rows with at least one NaN: {nan_rows_count}")
     # print("\nNaN per column:")
     # print(nan_per_column.sort_values(ascending=False))
+    df_test = winsorize(df_clean, [ExcelColAttributes.price_to_book, ExcelColAttributes.peg, ExcelColAttributes.forward_pe, ExcelColAttributes.growth_trend, ExcelColAttributes.ebitda_trend])
+    print(df_clean.describe())
+    #print(df_test.describe())
 
-    df_clean = df_clean.replace([np.inf, -np.inf], np.nan)
     return df_clean
 
 def impute_data(df):
     df = df.copy()
+    exclude_cols = [ExcelColAttributes.year_pct_change]
+    model_columns = [
+      c for c in df.select_dtypes(include="number").columns
+      if c not in exclude_cols
+    ]
 
-    numeric_cols = df.select_dtypes(include="number").columns
-
-    for col in numeric_cols:
+    for col in model_columns:
         global_median = df[col].median()
 
         def fill_value(group):
@@ -73,22 +114,31 @@ def impute_data(df):
 
 def standardize_z_data(df_clean):
     df = df_clean.copy()
+    exclude_cols = [ExcelColAttributes.year_pct_change]
+    model_columns = [
+      c for c in df.select_dtypes(include="number").columns
+      if c not in exclude_cols
+    ]
 
     # select only numeric columns (important!)
-    numeric_cols = df.select_dtypes(include="number").columns
+    iqr = df[model_columns].quantile(0.75) - df[model_columns].quantile(0.25)
 
     # z-score standardization
-    df[numeric_cols] = (df[numeric_cols] - df[numeric_cols].mean()) / df[numeric_cols].std()
+    df[model_columns] = (df[model_columns] - df[model_columns].median()) / iqr
+    #df[numeric_cols] = (df[numeric_cols] - df[numeric_cols].mean()) / df[numeric_cols].std()
 
     return df
 
 def standardize_by_sector(df):
     df = df.copy()
+    exclude_cols = [ExcelColAttributes.year_pct_change, ExcelColAttributes.ebitda_margin, ExcelColAttributes.gross_margin]
+    model_columns = [
+      c for c in df.select_dtypes(include="number").columns
+      if c not in exclude_cols
+    ]
 
-    numeric_cols = df.select_dtypes(include="number").columns
-
-    df[numeric_cols] = (
-        df.groupby("sector")[numeric_cols]
+    df[model_columns] = (
+        df.groupby("sector")[model_columns]
           .transform(lambda x: (x - x.mean()) / x.std())
     )
 
@@ -96,12 +146,29 @@ def standardize_by_sector(df):
 
 def run_kmeans(df, n_clusters=3):
     df = df.copy()
+    exclude_cols = [ExcelColAttributes.year_pct_change]
+    model_columns = [
+      c for c in df.select_dtypes(include="number").columns
+      if c not in exclude_cols
+    ]
 
-    # keep only numeric features (no uuid, sector, country)
-    X = df.select_dtypes(include="number")
+    X = df[model_columns]
 
     model = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     df["cluster"] = model.fit_predict(X)
+
+    pca = PCA()
+    pca.fit(X)
+
+    print(pca.explained_variance_ratio_)
+
+    loadings = pd.DataFrame(
+      pca.components_.T,
+      columns=[f"PC{i+1}" for i in range(X.shape[1])],
+      index=X.columns
+    )
+
+    print(loadings)
 
     return df, model
 
@@ -118,9 +185,9 @@ if __name__ == "__main__":
   pd.set_option("display.max_rows", None)
   df_clean = clean_data()
   df_impute = impute_data(df_clean)
-  df_standardize = standardize_by_sector(df_impute)
-  df_clustered, kmeans_model = run_kmeans(df_standardize, n_clusters=15)
-  print(df_clustered[["cluster"]].value_counts())
-  print(df_clustered.groupby("cluster").mean(numeric_only=True))
-  print(df_clustered[["uuid", "sector", "country", "cluster"]].head(20))
-  run_pca(df_clustered)
+  df_standardize = standardize_z_data(df_impute)
+  df_clustered, kmeans_model = run_kmeans(df_impute, n_clusters=6)
+  # print(df_clustered[["cluster"]].value_counts())
+  # print(df_clustered.groupby("cluster").mean(numeric_only=True))
+  # print(df_clustered[["uuid",ExcelColAttributes.name, "sector", "country", "cluster"]].head(50))
+  # run_pca(df_clustered)
