@@ -1,7 +1,12 @@
 from dataclasses import dataclass
+from enum import Enum
 import pandas as pd
 from app.core.db_connection import engine
 from app.models.Asset import Asset
+
+class AssetType(Enum):
+    STOCKS = "equity"
+    ETF = "etf"
 
 @dataclass(frozen=True)
 class AssetAttributes:
@@ -30,3 +35,12 @@ class AssetRepository :
     if not records:
         return None
     return Asset(records[0])
+  
+  async def get_all_uuid(self) -> list[dict]:
+    df = pd.read_sql(
+      f"""SELECT {AssetAttributes.uuid} FROM {self.table_name} WHERE {AssetAttributes.asset_type} = %s LIMIT 1""",
+      engine,
+      params = [(AssetType.STOCKS.value,)]
+    )
+    records = df.to_dict(orient="records")
+    return records

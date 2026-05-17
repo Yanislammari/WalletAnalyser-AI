@@ -1,2 +1,2 @@
-name,price_to_book,peg,forward_pe,country,sector,ebitda_margin,gross_margin,year_pct_change,growth_level,growth_trend,ebitda_level,ebitda_trend,net_debt_ebitda,capex_to_revenue,total_asset_to_revenue
-Microsoft,7.5644083,1.26,21.78098,United States,Technology,0.57956004,0.68309,-0.08052391,0.1566996201307127,0.11415004669217277,0.26506562678333645,0.21757203532518377,0.278606933659066,0.305476749291292,2.053963137294448
+uuid,price_to_book,peg,forward_pe,country,sector,ebitda_margin,gross_margin,year_pct_change,growth_level,growth_trend,ebitda_level,ebitda_trend,net_debt_ebitda,capex_to_revenue,total_asset_to_revenue
+06e3dc19-b941-41a6-9fb6-a456c8fed84a,1.9711196,0.45,14.232401,Hong Kong,Consumer Cyclical,0.09946,0.39811,0.07831812,0.05862821515393635,-0.001579147809838144,0.07118318616437636,-0.7318328013022584,4.078979542132986,,1.8105177474108007
