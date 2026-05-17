@@ -38,7 +38,7 @@ class AssetRepository :
   
   async def get_all_uuid(self) -> list[dict]:
     df = pd.read_sql(
-      f"""SELECT {AssetAttributes.uuid} FROM {self.table_name} WHERE {AssetAttributes.asset_type} = %s LIMIT 1""",
+      f"""SELECT {AssetAttributes.uuid} FROM {self.table_name} WHERE {AssetAttributes.asset_type} = %s""",
       engine,
       params = [(AssetType.STOCKS.value,)]
     )

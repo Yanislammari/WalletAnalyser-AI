@@ -164,6 +164,7 @@ async def extract_stocks_metrics(uuid : str):
   growth_metrics = compute_growth_metrics(t)
   features = {
     "uuid" : asset.uuid,
+    "name" : asset.official_name,
     **info_ttm,
     **growth_metrics,
     **balance_sheet_metrics,
