@@ -21,9 +21,7 @@ def add_metrics_to_csv(metrics: list, file = BASE_DIR / "../data/metrics.csv"):
     df = pd.read_csv(file)
     df = pd.concat([df, new_df], ignore_index=True)
     df["uuid"] = df["uuid"].astype(str).str.strip()
-    print(df)
     df = df.drop_duplicates("uuid", keep="last")
-    print(df)
     df.to_csv(file, index=False)
 
 def get_key_value(info : dict, key : str) -> Any:
@@ -43,27 +41,34 @@ def get_key(info : pd.DataFrame, key : str, endIndex = 4 ) -> pd.Series | pd.Dat
   return data
 
 def extract_ttm_info(info: dict) -> dict:
+    net_debt = get_key_value(info,'totalDebt') - get_key_value(info, 'totalCash')
     return {
        "price_to_book" :  get_key_value(info,"priceToBook"),
        "peg" : get_key_value(info,"pegRatio"),
-       "forward_pe" : get_key_value(info,"forwardPE"),
+       "pe" : get_key_value(info,"trailingPE"),
        "country" : get_key_value(info,"country"),
        "sector" : get_key_value(info,"sector"),
        "ebitda_margin" : get_key_value(info,"ebitdaMargins"),
        "gross_margin" : get_key_value(info,"grossMargins"),
-       "year_pct_change" : get_key_value(info,"52WeekChange")
+       "operating_margin" : get_key_value(info,"operatingMargins"),
+       "year_pct_change" : get_key_value(info,"52WeekChange"),
+
+       "net_debt" : net_debt,
+       "revenue" : get_key_value(info,"totalRevenue"),
+       "ebitda" : get_key_value(info,"ebitda"),
     }
 
 def growth_calculation(rev_y : dict, rev_q : dict) -> dict :
     # helper: safe check for quarterly validity
     quarterly_valid = (
-        rev_q is not None and rev_q is not np.nan
+        isinstance(rev_q, pd.Series)
         and len(rev_q) == 5
         and not rev_q.isna().any()
+        and not rev_q.iloc[4] == 0
     )
 
     yearly_valid = (
-        rev_y is not None and rev_y is not np.nan
+        isinstance(rev_y, pd.Series)
         and len(rev_y) == 4
         and not rev_y.isna().any()
     )
@@ -99,11 +104,26 @@ def compute_growth_metrics(t : yf.Ticker) -> dict :
        growth_trend = np.nan
     else :
       growth_level = np.median(growth_total[0:-2])
-      growth_trend = growth_total.iloc[0] - growth_total.iloc[-2]
+      growth_trend = (growth_total.iloc[0] - growth_total.iloc[-2]) / growth_total.iloc[-2]
 
     #EBITDA
-    ebitda_y = get_key(financials,"EBITDA")
-    ebitda_q = get_key(quarterly_financials,"EBITDA",5)
+    operating_y = get_key(financials,"Operating Revenue")
+    operating_q = get_key(quarterly_financials,"Operating Revenue",5)
+    depre_y = get_key(financials, "Reconciled Depreciation")
+    depre_q = get_key(financials, "Reconciled Depreciation")
+    interest_expense_y = get_key(financials, "Interest Expense")
+    interest_expense_q = get_key(financials, "Interest Expense")
+
+    ebitda_y = (
+      operating_y
+      + depre_y
+      - interest_expense_y
+    )
+    ebitda_q = (
+      operating_q
+      + depre_q
+      - interest_expense_q
+    )
 
     ebitda_total = growth_calculation(ebitda_y, ebitda_q)
     
@@ -112,7 +132,7 @@ def compute_growth_metrics(t : yf.Ticker) -> dict :
       ebitda_trend = np.nan
     else:
       ebitda_level = np.median(ebitda_total[0:-2])
-      ebitda_trend = ebitda_total.iloc[0] - ebitda_total.iloc[-2]
+      ebitda_trend = (ebitda_total.iloc[0] - ebitda_total.iloc[-2] ) / ebitda_total.iloc[-2]
 
     return {
         "growth_level": growth_level,
@@ -123,34 +143,24 @@ def compute_growth_metrics(t : yf.Ticker) -> dict :
 
 def compute_balance_sheet_metrics(t : yf.Ticker, ) -> dict :
   quarterly_balance_sheet = t.quarterly_balance_sheet
-  info = t.info
-
-  revenue_ttm = get_key_value(info,"totalRevenue")
-  net_debt = get_key( quarterly_balance_sheet, "Net Debt" )
-  net_debt_ebitda = (
-    np.nan
-    if net_debt is np.nan
-    else net_debt.sum() / get_key_value(info,"ebitda")
-  )
 
   total_asset = get_key(quarterly_balance_sheet, "Total Assets")
-  total_asset_to_revenue = (
+  total_asset = (
       np.nan
       if total_asset is np.nan
-      else ( total_asset.sum() / 4 ) / revenue_ttm
+      else ( total_asset.sum() / 4 )
   )
 
   capex = get_key(t.quarterly_cash_flow, "Capital Expenditure")
-  capex_to_revenue = (
+  capex = (
     np.nan
     if capex is np.nan
-    else capex.sum() / revenue_ttm * -1
+    else capex.sum() * -1
   )
 
   return {
-    "net_debt_ebitda": net_debt_ebitda,
-    "capex_to_revenue": capex_to_revenue,
-    "total_asset_to_revenue": total_asset_to_revenue
+    "capex": capex,
+    "total_asset": total_asset
   }
 
 
@@ -174,17 +184,17 @@ async def extract_stocks_metrics(uuid : str):
     for k, v in features.items()
   }
   return clean_features
-  #add_metrics_to_csv(clean_features)
 
 async def main():
+    pd.set_option("display.max_rows", None)
     assetRepository = AssetRepository()
     assets = await assetRepository.get_all_uuid()
     res = []
     for asset in assets:
-       features = await extract_stocks_metrics(asset["uuid"])
-       res.append(features)
-       await asyncio.sleep(1)
-    
+      features = await extract_stocks_metrics(asset["uuid"])
+      res.append(features)
+      await asyncio.sleep(1)
+
     add_metrics_to_csv(res)
 
 
