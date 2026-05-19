@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.136.1",
+    "kmodes>=0.12.2",
     "matplotlib>=3.10.9",
     "psycopg2>=2.9.12",
     "pydantic-settings>=2.14.1",

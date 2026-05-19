@@ -1,62 +1,22 @@
-from dataclasses import dataclass
 from pathlib import Path
-import seaborn as sns
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
+from kmodes.kprototypes import KPrototypes
 
-@dataclass(frozen=True)
-class ExcelColAttributes:
-    uuid: str = "uuid"
-    price_to_book: str = "price_to_book"
-    peg: str = "peg"
-    pe: str = "pe"
-    country: str = "country"
-    sector: str = "sector"
-    ebitda_margin: str = "ebitda_margin"
-    gross_margin: str = "gross_margin"
-    operating_margin: str = "operating_margin"
-    year_pct_change: str = "year_pct_change"
-    growth_level: str = "growth_level"
-    growth_trend: str = "growth_trend"
-    ebitda_level: str = "ebitda_level"
-    ebitda_trend: str = "ebitda_trend"
-    ebitda: str = "ebitda"
-    net_debt: str = "net_debt"
-    revenue: str = "revenue"
-    capex: str = "capex"
-    total_asset: str = "total_asset"
-    name: str = "name"
-
-@dataclass(frozen=True)
-class ModelColAttributes:
-    net_debt_ebita:str = "net_debt_ebitda" 
-    capex_to_revenue:str = "capex_to_revenue"
-    total_asset_to_revenue:str = "total_asset_to_revnue"
-
+from app.service.data_visualisation import ExcelColAttributes, ModelColAttributes, cluster_analysis, correlation_show, print_cleaning_proc, run_elbow_method, run_pca, show_data
+from app.service.utils import classify_net_debt_ebitda, winsorize, winsorize_two_sides
 
 BASE_DIR = Path(__file__).resolve().parent
-    
-def winsorize(df, cols, p=0.01):
-    df = df.copy()
-    for col in cols:
-        lower = df[col].quantile(p)
-        upper = df[col].quantile(1 - p)
-        df[col] = np.clip(df[col], lower, upper)
-    return df
 
 def drop_correlation(df : pd.DataFrame) -> pd.DataFrame:
     df = df.drop([ExcelColAttributes.capex, ExcelColAttributes.ebitda, ExcelColAttributes.ebitda_trend, ExcelColAttributes.gross_margin, # drop cause correlation
-        ExcelColAttributes.net_debt, ExcelColAttributes.total_asset, ExcelColAttributes.revenue  # drop cause use elsewhere
+        ExcelColAttributes.net_debt, ExcelColAttributes.total_asset, ExcelColAttributes.revenue # drop cause use elsewhere
                   ],axis=1)
-    # corr = df.corr(numeric_only=True)
-    # plt.figure(figsize=(10, 8))
-    # sns.heatmap(corr, annot=True, cmap="coolwarm", center=0)
-    # plt.show()
+    # correlation_show(df)
     return df
 
 def compute_variable(df : pd.DataFrame) -> pd.DataFrame:
@@ -95,28 +55,24 @@ def clean_data(file=BASE_DIR / "../data/metrics.csv") -> pd.DataFrame:
     nan_rows_count = nan_rows_mask.sum()
     nan_per_column = df_clean[data_cols].isna().sum()
     df_clean = df_clean.replace([np.inf, -np.inf], np.nan).fillna(0)
-
-    # print(f"Rows removed (all non-uuid values NaN; or 52w dont exist;  ): {removed_count}")
-    # print(f"Rows remaining: {len(df_clean)}")
-    # print(f"Rows with at least one NaN: {nan_rows_count}")
-    # print("\nNaN per column:")
-    # print(nan_per_column.sort_values(ascending=False))
+    print_cleaning_proc(df_clean, removed_count, nan_rows_count, nan_per_column)
 
     return df_clean
 
-def impute_data(df):
-    df = df.copy()
-    df = winsorize(df,
-        [ExcelColAttributes.price_to_book, ExcelColAttributes.peg, ModelColAttributes.total_asset_to_revenue]
-        ,0.06
-    )
-    df = winsorize(df, 
-        [ExcelColAttributes.operating_margin, ExcelColAttributes.growth_trend, ExcelColAttributes.ebitda_level, ModelColAttributes.capex_to_revenue, ExcelColAttributes.growth_level]
+def winsorize_data(df):
+    df_wins = df.copy()
+    df_wins = winsorize(df_wins, 
+        [ExcelColAttributes.ebitda_level, ModelColAttributes.capex_to_revenue, ExcelColAttributes.growth_level,ExcelColAttributes.operating_margin]
         ,0.0035
     )
-    df = winsorize(df, [ExcelColAttributes.pe],0.4)
-    df = winsorize(df,[ModelColAttributes.net_debt_ebita],0.25)
-    # print(df.describe())
+    df_wins = winsorize(df_wins, 
+        [ExcelColAttributes.pe, ExcelColAttributes.price_to_book, ExcelColAttributes.peg, ModelColAttributes.total_asset_to_revenue]
+        ,0.05)
+    df_wins = winsorize(df_wins,[ModelColAttributes.net_debt_ebita, ExcelColAttributes.growth_trend, ExcelColAttributes.operating_margin],0.02)
+    return df_wins
+
+def impute_data(df):
+    df = df.copy()
     exclude_cols = [ExcelColAttributes.year_pct_change]
     model_columns = [
       c for c in df.select_dtypes(include="number").columns
@@ -150,12 +106,22 @@ def impute_data(df):
     
     return df
 
+def boost_data(df):
+    df = df.copy()
+    # df[ExcelColAttributes.operating_margin] = df[ExcelColAttributes.operating_margin] * 1.2
+    # df[ExcelColAttributes.ebitda_margin] = df[ExcelColAttributes.ebitda_margin] * 1.2
+    # df[ExcelColAttributes.growth_level] = df[ExcelColAttributes.growth_level] * 2
+    # df[ExcelColAttributes.growth_trend] = df[ExcelColAttributes.growth_trend] * 2
+
+    return df
+
 
 def standardize_z_data(df_clean):
     df = df_clean.copy()
-    logs_cols = [ExcelColAttributes.peg, ExcelColAttributes.pe, ModelColAttributes.total_asset_to_revenue, ExcelColAttributes.operating_margin]
-    exclude_cols = [ExcelColAttributes.year_pct_change, 
-        ExcelColAttributes.ebitda_margin, ExcelColAttributes.growth_level, ExcelColAttributes.ebitda_level]
+    logs_cols = [] # [ExcelColAttributes.ebitda_level] #[ExcelColAttributes.peg, ModelColAttributes.total_asset_to_revenue, ExcelColAttributes.operating_margin, ModelColAttributes.net_debt_ebita]
+    exclude_cols = [ExcelColAttributes.year_pct_change
+                    #ExcelColAttributes.growth_trend, ExcelColAttributes.growth_level, ExcelColAttributes.ebitda_trend, ExcelColAttributes.ebitda_level
+    ]
     model_columns = [
       c for c in df.select_dtypes(include="number").columns
       if c not in exclude_cols and c not in logs_cols
@@ -168,7 +134,7 @@ def standardize_z_data(df_clean):
 
 def standardize_by_sector(df):
     df = df.copy()
-    exclude_cols = [ExcelColAttributes.year_pct_change, ExcelColAttributes.ebitda_margin, ExcelColAttributes.operating_margin, ExcelColAttributes.growth_level, ExcelColAttributes.ebitda_level]
+    exclude_cols = [ExcelColAttributes.year_pct_change] #, ExcelColAttributes.ebitda_margin, ExcelColAttributes.operating_margin, ExcelColAttributes.growth_level, ExcelColAttributes.ebitda_level]
     model_columns = [
       c for c in df.select_dtypes(include="number").columns
       if c not in exclude_cols
@@ -237,43 +203,66 @@ def run_gaussian(df):
 
     return df, labels
     
-def run_pca(df_clustered):
-  X = df_clustered.select_dtypes(include="number").drop(columns=["cluster",ExcelColAttributes.year_pct_change])
-  pca = PCA(n_components=0.9)
-  components = pca.fit_transform(X)
+def run_kproto(df, n_clusters=3):
+    exclude_cols = [ExcelColAttributes.uuid, ExcelColAttributes.country, ExcelColAttributes.sector, ExcelColAttributes.name, ExcelColAttributes.year_pct_change]
+    clustering_cols = [
+        c for c in df.columns
+        if c not in exclude_cols
+    ]
+    clustering_df = df[clustering_cols].copy()
 
-  plt.scatter(components[:, 0], components[:, 1], c=df_clustered["cluster"])
-  plt.title("K-means Clusters (PCA projection)")
-  plt.show()
+    categorical_cols = [ModelColAttributes.net_debt_ebita]
 
-def run_elbow_method(df_clustered):
-    X = df_clustered.select_dtypes(include="number").drop(columns=["cluster",ExcelColAttributes.year_pct_change])
-    inertias = []
-    K = range(2, 11)
+    categorical_columns = [
+        clustering_df.columns.get_loc(col)
+        for col in categorical_cols
+    ]
+    X = clustering_df
+    clustering_df = clustering_df.to_numpy()
 
-    for k in K:
-        model = KMeans(n_clusters=k, random_state=42, n_init=10)
-        model.fit(X)
-        inertias.append(model.inertia_)
+    kproto = KPrototypes(n_clusters, random_state=42)
+    clusters = kproto.fit_predict(
+        clustering_df,
+        categorical=categorical_columns
+    )
 
-    plt.plot(K, inertias, marker="o")
-    plt.title("Elbow Method")
-    plt.xlabel("k")
-    plt.ylabel("Inertia")
-    plt.show()
+    df["cluster"] = clusters
+
+    pca = PCA()
+    pca.fit(X)
+
+    print(pca.explained_variance_ratio_)
+
+    loadings = pd.DataFrame(
+      pca.components_.T,
+      columns=[f"PC{i+1}" for i in range(X.shape[1])],
+      index=X.columns
+    )
+
+    print(loadings)
+
+    return df, clusters
 
 
 if __name__ == "__main__":
   pd.set_option("display.max_rows", None)
   df_clean = clean_data()
-  # print(df_clean.describe())
-  df_impute = impute_data(df_clean)
+  print(df_clean.describe())
+
+  df_winsorize = winsorize_data(df_clean)
+  print(df_winsorize.describe())
+
+  df_impute = impute_data(df_winsorize)
   print(df_impute.describe())
+
   df_standardize = standardize_z_data(df_impute)
   print(df_standardize.describe())
-  df_clustered, kmeans_model = run_kmeans(df_standardize,7)
+
+  df_boost = boost_data(df_standardize)
+  print(df_boost.describe())
+
+  df_clustered, kmeans_model = run_kmeans(df_boost,10)
   run_elbow_method(df_clustered)
-  print(df_clustered[["cluster"]].value_counts())
-  print(df_clustered.groupby("cluster").mean(numeric_only=True))
-  print(df_clustered[["uuid",ExcelColAttributes.name, "sector", "country", "cluster"]].head(50))
+  show_data(df_clustered)
   run_pca(df_clustered)
+  cluster_analysis(kmeans_model)
