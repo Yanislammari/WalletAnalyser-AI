@@ -5,17 +5,16 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
-from kmodes.kprototypes import KPrototypes
+from sklearn.metrics import silhouette_score
+import umap.umap_ as umap
+import hdbscan
 
-from app.service.data_visualisation import ExcelColAttributes, ModelColAttributes, cluster_analysis, correlation_show, print_cleaning_proc, run_elbow_method, run_pca, show_data
-from app.service.utils import classify_net_debt_ebitda, winsorize, winsorize_two_sides
-
+from app.service.data_visualisation import ExcelColAttributes, ModelColAttributes, clustering_overlay, correlation_show, pca_2D, print_cleaning_proc, run_pca, show_data, plot_umap_2d, visualize_pca
+from app.service.utils import winsorize
 BASE_DIR = Path(__file__).resolve().parent
 
 def drop_correlation(df : pd.DataFrame) -> pd.DataFrame:
-    df = df.drop([ExcelColAttributes.capex, ExcelColAttributes.ebitda, ExcelColAttributes.ebitda_trend, ExcelColAttributes.gross_margin, # drop cause correlation
-        ExcelColAttributes.net_debt, ExcelColAttributes.total_asset, ExcelColAttributes.revenue # drop cause use elsewhere
-                  ],axis=1)
+    df = df.drop([ExcelColAttributes.capex, ExcelColAttributes.ebitda, ExcelColAttributes.ebitda_trend, ExcelColAttributes.gross_margin, ExcelColAttributes.net_debt],axis=1) #drop correlation
     # correlation_show(df)
     return df
 
@@ -54,7 +53,7 @@ def clean_data(file=BASE_DIR / "../data/metrics.csv") -> pd.DataFrame:
     nan_rows_mask = df_clean.isna().any(axis=1)
     nan_rows_count = nan_rows_mask.sum()
     nan_per_column = df_clean[data_cols].isna().sum()
-    df_clean = df_clean.replace([np.inf, -np.inf], np.nan).fillna(0)
+    df_clean = df_clean.replace([np.inf, -np.inf], np.nan)
     print_cleaning_proc(df_clean, removed_count, nan_rows_count, nan_per_column)
 
     return df_clean
@@ -73,11 +72,7 @@ def winsorize_data(df):
 
 def impute_data(df):
     df = df.copy()
-    exclude_cols = [ExcelColAttributes.year_pct_change]
-    model_columns = [
-      c for c in df.select_dtypes(include="number").columns
-      if c not in exclude_cols
-    ]
+    model_columns = [c for c in df.select_dtypes(include="number").columns]
 
     for col in model_columns:
         global_median = df[col].median()
@@ -106,59 +101,26 @@ def impute_data(df):
     
     return df
 
-def boost_data(df):
-    df = df.copy()
-    # df[ExcelColAttributes.operating_margin] = df[ExcelColAttributes.operating_margin] * 1.2
-    # df[ExcelColAttributes.ebitda_margin] = df[ExcelColAttributes.ebitda_margin] * 1.2
-    # df[ExcelColAttributes.growth_level] = df[ExcelColAttributes.growth_level] * 2
-    # df[ExcelColAttributes.growth_trend] = df[ExcelColAttributes.growth_trend] * 2
-
-    return df
-
-
 def standardize_z_data(df_clean):
     df = df_clean.copy()
-    logs_cols = [] # [ExcelColAttributes.ebitda_level] #[ExcelColAttributes.peg, ModelColAttributes.total_asset_to_revenue, ExcelColAttributes.operating_margin, ModelColAttributes.net_debt_ebita]
-    exclude_cols = [ExcelColAttributes.year_pct_change
-                    #ExcelColAttributes.growth_trend, ExcelColAttributes.growth_level, ExcelColAttributes.ebitda_trend, ExcelColAttributes.ebitda_level
-    ]
-    model_columns = [
-      c for c in df.select_dtypes(include="number").columns
-      if c not in exclude_cols and c not in logs_cols
-    ]
-
-    df[logs_cols] = np.log1p(df[logs_cols].abs())
+    model_columns = [c for c in df.select_dtypes(include="number").columns]
     df[model_columns] = (df[model_columns] - df[model_columns].mean()) / df[model_columns].std()
-
-    return df
-
-def standardize_by_sector(df):
-    df = df.copy()
-    exclude_cols = [ExcelColAttributes.year_pct_change] #, ExcelColAttributes.ebitda_margin, ExcelColAttributes.operating_margin, ExcelColAttributes.growth_level, ExcelColAttributes.ebitda_level]
-    model_columns = [
-      c for c in df.select_dtypes(include="number").columns
-      if c not in exclude_cols
-    ]
-
-    df[model_columns] = (
-        df.groupby("sector")[model_columns]
-          .transform(lambda x: (x - x.mean()) / x.std())
-    )
 
     return df
 
 def run_kmeans(df, n_clusters=3):
     df = df.copy()
-    exclude_cols = [ExcelColAttributes.year_pct_change]
-    model_columns = [
-      c for c in df.select_dtypes(include="number").columns
-      if c not in exclude_cols
-    ]
-
+    model_columns = [c for c in df.select_dtypes(include="number").columns]
     X = df[model_columns]
 
+    pca = PCA(n_components=0.85)  # keep 85% variance
+    X_reduced = pca.fit_transform(X)
+
     model = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    df["cluster"] = model.fit_predict(X)
+    labels = model.fit_predict(X_reduced)
+    df["cluster"] = labels
+
+    print(silhouette_score(X_reduced, labels))
 
     pca = PCA()
     pca.fit(X)
@@ -175,78 +137,81 @@ def run_kmeans(df, n_clusters=3):
 
     return df, model
 
-def run_gaussian(df):
-    df = df.copy()
-    gmm = GaussianMixture(n_components=5, covariance_type="full")
-    exclude_cols = [ExcelColAttributes.year_pct_change]
-    model_columns = [
-      c for c in df.select_dtypes(include="number").columns
-      if c not in exclude_cols
-    ]
+def run_gaussian(df_standardize, n_components=10):
+    df = df_standardize.copy()
+    gmm = GaussianMixture(n_components=n_components, covariance_type="full", random_state=42)
+    model_columns = [c for c in df.select_dtypes(include="number").columns]
 
     X = df[model_columns]
     labels = gmm.fit_predict(X)
     df["cluster"] = labels
 
-    pca = PCA()
-    pca.fit(X)
+    print(silhouette_score(X, labels))
 
-    print(pca.explained_variance_ratio_)
+    probs = gmm.predict_proba(X)
 
-    loadings = pd.DataFrame(
-      pca.components_.T,
-      columns=[f"PC{i+1}" for i in range(X.shape[1])],
-      index=X.columns
-    )
-
-    print(loadings)
+    for i, prob in enumerate(probs[:50]):
+        formatted = ", ".join([f"{p:.3f}" for p in prob])
+        print(f"Point {i}: [{formatted}]")
 
     return df, labels
-    
-def run_kproto(df, n_clusters=3):
-    exclude_cols = [ExcelColAttributes.uuid, ExcelColAttributes.country, ExcelColAttributes.sector, ExcelColAttributes.name, ExcelColAttributes.year_pct_change]
-    clustering_cols = [
-        c for c in df.columns
-        if c not in exclude_cols
-    ]
-    clustering_df = df[clustering_cols].copy()
 
-    categorical_cols = [ModelColAttributes.net_debt_ebita]
+def run_umap_hdbscan(df, 
+                     umap_n_components=10, 
+                     umap_n_neighbors=15,
+                     umap_min_dist=0.1,
+                     hdbscan_min_cluster_size=30,
+                     hdbscan_min_samples=3):
+    df = df.copy()
+    model_columns = [c for c in df.select_dtypes(include="number").columns]
+    X = df[model_columns].values
 
-    categorical_columns = [
-        clustering_df.columns.get_loc(col)
-        for col in categorical_cols
-    ]
-    X = clustering_df
-    clustering_df = clustering_df.to_numpy()
-
-    kproto = KPrototypes(n_clusters, random_state=42)
-    clusters = kproto.fit_predict(
-        clustering_df,
-        categorical=categorical_columns
+    # --- UMAP reduction ---
+    reducer = umap.UMAP(
+        n_components=umap_n_components,
+        n_neighbors=umap_n_neighbors,
+        min_dist=umap_min_dist,
+        random_state=42,
+        metric="euclidean"
     )
+    X_reduced = reducer.fit_transform(X)
 
-    df["cluster"] = clusters
-
-    pca = PCA()
-    pca.fit(X)
-
-    print(pca.explained_variance_ratio_)
-
-    loadings = pd.DataFrame(
-      pca.components_.T,
-      columns=[f"PC{i+1}" for i in range(X.shape[1])],
-      index=X.columns
+    # --- HDBSCAN clustering ---
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=hdbscan_min_cluster_size,
+        min_samples=hdbscan_min_samples,
+        cluster_selection_method="leaf",
+        prediction_data=True
     )
+    labels = clusterer.fit_predict(X_reduced)
 
-    print(loadings)
+    if -1 in labels:
+        soft = hdbscan.all_points_membership_vectors(clusterer)
+        noise_mask = labels == -1
+        labels[noise_mask] = soft[noise_mask].argmax(axis=1)
 
-    return df, clusters
+    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+    n_noise    = (labels == -1).sum()
+    print(f"Clusters found : {n_clusters}")
+    print(f"Noise points   : {n_noise} ({n_noise/len(labels)*100:.1f}%)")
 
+    # silhouette only makes sense if we have ≥2 clusters and not too much noise
+    mask = labels != -1
+    if n_clusters >= 2 and mask.sum() > n_clusters:
+        score = silhouette_score(X_reduced[mask], labels[mask])
+        print(f"Silhouette score (excl. noise): {score:.4f}")
+    else:
+        print("Not enough clusters for silhouette score")
+
+    df["cluster"] = labels
+
+    plot_umap_2d(X, labels, umap_n_neighbors, umap_min_dist)
+    return df, clusterer
 
 if __name__ == "__main__":
   pd.set_option("display.max_rows", None)
   df_clean = clean_data()
+  df_clean = df_clean.drop([ExcelColAttributes.year_pct_change], axis=1)
   print(df_clean.describe())
 
   df_winsorize = winsorize_data(df_clean)
@@ -257,12 +222,16 @@ if __name__ == "__main__":
 
   df_standardize = standardize_z_data(df_impute)
   print(df_standardize.describe())
-
-  df_boost = boost_data(df_standardize)
-  print(df_boost.describe())
-
-  df_clustered, kmeans_model = run_kmeans(df_boost,10)
-  run_elbow_method(df_clustered)
+ 
+  pca_2D(df_standardize)
+  visualize_pca(df_standardize)
+  df_clustered, hdb_model = run_umap_hdbscan(
+        df_standardize,
+        umap_n_components=5,
+        umap_n_neighbors=50,
+        hdbscan_min_cluster_size=40,
+        hdbscan_min_samples=1
+    )
+  clustering_overlay(df_clustered)
   show_data(df_clustered)
   run_pca(df_clustered)
-  cluster_analysis(kmeans_model)
