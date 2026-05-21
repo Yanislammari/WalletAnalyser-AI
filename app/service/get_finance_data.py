@@ -185,7 +185,7 @@ async def extract_stocks_metrics(uuid : str):
   }
   return clean_features
 
-async def main():
+async def fetch_data_for_ai():
     pd.set_option("display.max_rows", None)
     assetRepository = AssetRepository()
     assets = await assetRepository.get_all_uuid()
@@ -197,7 +197,5 @@ async def main():
 
     add_metrics_to_csv(res)
 
-
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(fetch_data_for_ai())

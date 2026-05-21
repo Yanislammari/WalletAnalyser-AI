@@ -58,7 +58,7 @@ def clean_data(file=BASE_DIR / "../data/metrics.csv") -> pd.DataFrame:
     nan_rows_count = nan_rows_mask.sum()
     nan_per_column = df_clean[data_cols].isna().sum()
     df_clean = df_clean.replace([np.inf, -np.inf], np.nan)
-    print_cleaning_proc(df_clean, removed_count, nan_rows_count, nan_per_column)
+    # print_cleaning_proc(df_clean, removed_count, nan_rows_count, nan_per_column)
 
     return df_clean
 

@@ -11,7 +11,6 @@ from app.repositories.asset_cluster_repository import AssetClusterRepository
 from app.service.ai_training_service import clean_data, impute_data, standardize_z_data, winsorize_data
 from app.service.data_visualisation import ExcelColAttributes, ModelColAttributes
 from app.service.get_finance_data import add_metrics_to_csv
-from app.service.utils import winsorize
 
 BASE_DIR = Path(__file__).resolve().parent
 path = BASE_DIR / "data/metrics.csv"
@@ -81,21 +80,20 @@ def prod_create_hdbscan(df,
     return df_csv, clusterer
 
 async def create_prod_model():
-    # print("Training model ...")
-    # df_clean = clean_data(file=BASE_DIR / "data/metrics.csv")
-    # df_clean = df_clean.drop([ExcelColAttributes.year_pct_change], axis=1)
-    # df_winsorize = winsorize_data(df_clean)
-    # df_impute = impute_data(df_winsorize)
-    # df_standardize = standardize_z_data(df_impute)
-    # df_clustered, hdb_model = prod_create_hdbscan(
-    #     df_standardize,
-    #     umap_n_components=5,
-    #     umap_n_neighbors=50,
-    #     hdbscan_min_cluster_size=40,
-    #     hdbscan_min_samples=1
-    # )
-    # print("Model ready !!")
-    df_clustered = pd.read_csv(BASE_DIR / "data/metrics_cluster.csv")
+    print("Training model ...")
+    df_clean = clean_data(file=BASE_DIR / "data/metrics.csv")
+    df_clean = df_clean.drop([ExcelColAttributes.year_pct_change], axis=1)
+    df_winsorize = winsorize_data(df_clean)
+    df_impute = impute_data(df_winsorize)
+    df_standardize = standardize_z_data(df_impute)
+    df_clustered, hdb_model = prod_create_hdbscan(
+        df_standardize,
+        umap_n_components=5,
+        umap_n_neighbors=50,
+        hdbscan_min_cluster_size=40,
+        hdbscan_min_samples=1
+    )
+    print("Model ready !!")
     await save_df_to_db(df_clustered)
     print("Model saved to db")
     return df_clustered
