@@ -43,3 +43,6 @@ Thumbs.db
 .coverage
 htmlcov/
 .pytest_cache/
+
+
+app/data/metrics_cluster.csv

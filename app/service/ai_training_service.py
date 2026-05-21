@@ -9,8 +9,12 @@ from sklearn.metrics import silhouette_score
 import umap.umap_ as umap
 import hdbscan
 
+
+from app.repositories.asset_cluster_repository import AssetClusterRepository
 from app.service.data_visualisation import ExcelColAttributes, ModelColAttributes, clustering_overlay, correlation_show, pca_2D, print_cleaning_proc, run_pca, show_data, plot_umap_2d, visualize_pca
+from app.service.get_finance_data import add_metrics_to_csv
 from app.service.utils import winsorize
+
 BASE_DIR = Path(__file__).resolve().parent
 
 def drop_correlation(df : pd.DataFrame) -> pd.DataFrame:

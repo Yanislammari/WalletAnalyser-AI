@@ -192,7 +192,7 @@ Terraform ensures the App Service is always configured to pull the latest image 
 `uv add <package>` — add a production dependency  
 `uv add --dev <package>` — add a development dependency  
 `uv remove <package>` — remove a dependency  
-`uv run uvicorn app.main:app --reload` — start dev server  
+`uv run uvicorn app.main:app --port 3001 --reload` — start dev server  
 `uv run ruff check .` — lint  
 `uv run ruff format .` — format  
 `uv run mypy app/` — type check

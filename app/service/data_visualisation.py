@@ -38,7 +38,7 @@ class ExcelColAttributes:
 class ModelColAttributes:
     net_debt_ebita:str = "net_debt_ebitda" 
     capex_to_revenue:str = "capex_to_revenue"
-    total_asset_to_revenue:str = "total_asset_to_revnue"
+    total_asset_to_revenue:str = "total_asset_to_revenue"
 
 
 def print_cleaning_proc(df_clean, removed_count, nan_rows_count, nan_per_column):
@@ -80,7 +80,6 @@ def show_data(df_clustered):
   print(df_clustered[["cluster"]].value_counts())
   print(df_clustered.groupby("cluster").mean(numeric_only=True))
   print(df_clustered[["uuid",ExcelColAttributes.name, "sector", "country", ExcelColAttributes.ebitda_margin, ExcelColAttributes.operating_margin,"cluster"]].head(50))
-  print(df_clustered[df_clustered["cluster"] == 0])
 
 def print_cluster_distance_matrix(dist_matrix):
     df = pd.DataFrame(dist_matrix)
