@@ -8,6 +8,7 @@ wheels/
 *.egg-info
 
 # Virtual environments
+venv
 .venv
 
 # uv
@@ -42,3 +43,6 @@ Thumbs.db
 .coverage
 htmlcov/
 .pytest_cache/
+
+
+app/data/metrics_cluster.csv
