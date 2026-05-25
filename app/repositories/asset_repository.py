@@ -3,6 +3,7 @@ from enum import Enum
 import pandas as pd
 from app.core.db_connection import engine
 from app.models.Asset import Asset
+from sqlalchemy import text
 
 class AssetType(Enum):
     STOCKS = "equity"
@@ -44,3 +45,19 @@ class AssetRepository :
     )
     records = df.to_dict(orient="records")
     return records
+  
+  async def patch_sector(self, uuid: str, sector_uuid: str | None):
+      with engine.connect() as conn:
+          conn.execute(
+              text(f'UPDATE {self.table_name} SET {AssetAttributes.sector_uuid} = :sector_uuid, {AssetAttributes.updatedAt} = NOW() WHERE {AssetAttributes.uuid} = :uuid'),
+              {"sector_uuid": sector_uuid, "uuid": uuid}
+          )
+          conn.commit()
+
+  async def patch_country(self, uuid: str, country_uuid: str | None):
+      with engine.connect() as conn:
+          conn.execute(
+              text(f'UPDATE {self.table_name} SET {AssetAttributes.country_uuid} = :country_uuid, {AssetAttributes.updatedAt} = NOW() WHERE {AssetAttributes.uuid} = :uuid'),
+              {"country_uuid": country_uuid, "uuid": uuid}
+          )
+          conn.commit()
