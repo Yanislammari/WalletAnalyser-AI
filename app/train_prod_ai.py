@@ -8,12 +8,35 @@ import umap.umap_ as umap
 import hdbscan
 
 from app.repositories.asset_cluster_repository import AssetClusterRepository
+from app.repositories.asset_repository import AssetRepository
+from app.repositories.country_repository import CountryRepository
+from app.repositories.sector_repository import SectorRepository
 from app.service.ai_training_service import clean_data, impute_data, standardize_z_data, winsorize_data
 from app.service.data_visualisation import ExcelColAttributes, ModelColAttributes
 from app.service.get_finance_data import add_metrics_to_csv
 
 BASE_DIR = Path(__file__).resolve().parent
 path = BASE_DIR / "data/metrics.csv"
+
+async def complete_db():
+    df = pd.read_csv(path)
+    
+    tasks = [process_row(row) for _, row in df.iterrows()]
+    await asyncio.gather(*tasks)
+
+async def process_row(row):
+    uuid = row["uuid"]
+    asset = await AssetRepository().get_asset(uuid)
+
+    if asset.sector_uuid is None and pd.notna(row[ExcelColAttributes.sector]):
+        sector = await SectorRepository().get_sector_uuid(row[ExcelColAttributes.sector])
+        if sector is not None:
+            await AssetRepository().patch_sector(uuid, sector.uuid)
+
+    if asset.country_uuid is None and pd.notna(row[ExcelColAttributes.country]):
+        country = await CountryRepository().get_country_uuid(row[ExcelColAttributes.country])
+        if country is not None:
+            await AssetRepository().patch_country(uuid, country.uuid)
 
 async def save_df_to_db(df_clustered):
     # format for db
@@ -80,6 +103,8 @@ def prod_create_hdbscan(df,
     return df_csv, clusterer
 
 async def create_prod_model():
+    print("Completing db with sector and country uuids...")
+    await complete_db()
     print("Training model ...")
     df_clean = clean_data(file=BASE_DIR / "data/metrics.csv")
     df_clean = df_clean.drop([ExcelColAttributes.year_pct_change], axis=1)
