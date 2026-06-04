@@ -45,4 +45,4 @@ htmlcov/
 .pytest_cache/
 
 
-app/data/metrics_cluster.csv
+app/data/

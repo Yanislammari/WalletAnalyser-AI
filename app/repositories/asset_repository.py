@@ -39,7 +39,7 @@ class AssetRepository :
   
   async def get_all_uuid(self) -> list[dict]:
     df = pd.read_sql(
-      f"""SELECT {AssetAttributes.uuid} FROM {self.table_name} WHERE {AssetAttributes.asset_type} = %s""",
+      f"""SELECT {AssetAttributes.uuid} FROM {self.table_name} WHERE {AssetAttributes.asset_type} = %s AND {AssetAttributes.ticker_name} IS NOT NULL""",
       engine,
       params = [(AssetType.STOCKS.value,)]
     )
