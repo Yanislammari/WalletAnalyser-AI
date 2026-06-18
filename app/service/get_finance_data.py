@@ -12,6 +12,7 @@ from app.repositories.asset_repository import AssetRepository
 BASE_DIR = Path(__file__).resolve().parent
 
 def add_metrics_to_csv(metrics: list, file = BASE_DIR / "../data/metrics.csv"):
+    open(file, "w").close()
     new_df = pd.DataFrame(metrics)
     if not os.path.exists(file) or os.path.getsize(file) == 0:
         new_df.to_csv(file, index=False)

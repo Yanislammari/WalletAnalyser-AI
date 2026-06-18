@@ -8,7 +8,7 @@ router = APIRouter()
 is_fetching = False
 is_training = False
 
-@router.get("/fetch-data")
+@router.get("/create-prod-model")
 async def fetch_data_for_model(background_tasks: BackgroundTasks) -> dict[str, str]:
     global is_fetching
     if is_fetching:
@@ -19,6 +19,7 @@ async def fetch_data_for_model(background_tasks: BackgroundTasks) -> dict[str, s
         is_fetching = True
         try:
             await fetch_data_for_ai()
+            await create_prod_model()
         finally:
             is_fetching = False
 
