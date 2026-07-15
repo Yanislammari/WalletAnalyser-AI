@@ -26,6 +26,7 @@ async def complete_db():
 
 async def process_row(row):
     uuid = row["uuid"]
+    print(uuid)
     asset = await AssetRepository().get_asset(uuid)
 
     if asset.sector_uuid is None and pd.notna(row[ExcelColAttributes.sector]):

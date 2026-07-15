@@ -168,7 +168,7 @@ def compute_balance_sheet_metrics(t : yf.Ticker, ) -> dict :
 async def extract_stocks_metrics(uuid : str):
   asset = await AssetRepository().get_asset(uuid)
   print(asset.ticker_name , asset.uuid)
-  t = yf.Ticker(asset.ticker_name)
+  t = yf.Ticker(asset.ticker_name)  
 
   info_ttm = extract_ttm_info(t.info)
   balance_sheet_metrics = compute_balance_sheet_metrics(t) 
@@ -192,7 +192,11 @@ async def fetch_data_for_ai():
     assets = await assetRepository.get_all_uuid()
     res = []
     for asset in assets:
-      features = await extract_stocks_metrics(asset["uuid"])
+      try:
+        features = await extract_stocks_metrics(asset["uuid"])
+      except Exception as e:
+        print(f"Failed to extract metrics for {asset['uuid']}: {e}")
+        continue
       res.append(features)
       await asyncio.sleep(1)
 
